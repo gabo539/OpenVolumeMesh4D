@@ -154,37 +154,41 @@ void create_five_cell_4d(Mesh4D& mesh) {
 
 
 // projection/shadowing from 4D to 3D
-void convert_to_3d_shadow(const Mesh4D& mesh_4d, OpenVolumeMesh::GeometricPolyhedralMeshV3d& mesh_3d) {
-    std::cout << "Projecting to 3D ..." << std::endl;
+// drop_axis: 0=x, 1=y, 2=z, 3=w
+void convert_to_3d_shadow(const Mesh4D& mesh_4d, OpenVolumeMesh::GeometricPolyhedralMeshV3d& mesh_3d, int drop_axis) {
+    std::cout << "Projecting to 3D (dropping axis " << drop_axis << ")..." << std::endl;
 
     // copy vertices
     for(auto v_it = mesh_4d.vertices_begin(); v_it != mesh_4d.vertices_end(); ++v_it) {
         Vec4d p4 = mesh_4d.vertex(*v_it);
 
-        // chop off w-coord
-        mesh_3d.add_vertex(Vec3d(p4[0], p4[1], p4[2]));
+        // select coordinates based on what we are dropping
+        std::vector<double> coords;
+        coords.reserve(3);
+
+        for(int i = 0; i < 4; ++i) {
+            if(i != drop_axis) {
+                coords.push_back(p4[i]);
+            }
+        }
+
+        mesh_3d.add_vertex(Vec3d(coords[0], coords[1], coords[2]));
     }
 
     // copy faces
-        //iterate through faces
     for(auto f_it = mesh_4d.faces_begin(); f_it != mesh_4d.faces_end(); ++f_it) {
         std::vector<OpenVolumeMesh::VertexHandle> face_verts;
-
-        // get vertices from each face
-            // get default side from face
         auto hf = mesh_4d.halfface_handle(*f_it, 0);
 
         for(auto hfv_it = mesh_4d.hfv_iter(hf); hfv_it.valid(); ++hfv_it) {
-            face_verts.push_back(*hfv_it); //iterate through vertices and add them to array
+            face_verts.push_back(*hfv_it);
         }
-
         mesh_3d.add_face(face_verts);
     }
 
-    // copy cells (see how copying faces works)
+    // copy cells
     for(auto c_it = mesh_4d.cells_begin(); c_it != mesh_4d.cells_end(); ++c_it) {
         std::vector<OpenVolumeMesh::HalfFaceHandle> cell_halffaces;
-
         for(auto chf_it = mesh_4d.chf_iter(*c_it); chf_it.valid(); ++chf_it) {
             cell_halffaces.push_back(*chf_it);
         }
@@ -194,13 +198,35 @@ void convert_to_3d_shadow(const Mesh4D& mesh_4d, OpenVolumeMesh::GeometricPolyhe
 
 
 int main() {
+    //ask user which axis to drop
+    char coord_char;
+    int drop_axis = 3; // default to w
+
+    std::cout << "Which coordinate should be dropped? Select x, y, z or w and press ENTER: ";
+    std::cin >> coord_char;
+
+    // normalize to lower case
+    coord_char = std::tolower(coord_char);
+
+    switch(coord_char) {
+    case 'x': drop_axis = 0; break;
+    case 'y': drop_axis = 1; break;
+    case 'z': drop_axis = 2; break;
+    case 'w': drop_axis = 3; break;
+    default:
+        std::cout << "Invalid input '" << coord_char << "', defaulting to 'w'." << std::endl;
+        drop_axis = 3;
+        break;
+    }
+
+
     // create mesh
     Mesh4D mesh_4d;
     create_five_cell_4d(mesh_4d);
 
     // project to 3d
     OpenVolumeMesh::GeometricPolyhedralMeshV3d mesh_3d;
-    convert_to_3d_shadow(mesh_4d, mesh_3d);
+    convert_to_3d_shadow(mesh_4d, mesh_3d, drop_axis);
 
     // export into new folder
     std::string relative_path = "../../../examples/4D_shapes/ovm_files";
@@ -219,7 +245,9 @@ int main() {
         std::cout << "Created directory: " << target_dir << std::endl;
     }
 
-    std::string filename = (target_dir / "five_cell_projected.ovm").string(); // NOTE FOR ME: Change this after adding new shapes
+    // NOTE FOR ME: Change this after adding new shapes
+    std::string axis_name(1, (coord_char == 'x' || coord_char == 'y' || coord_char == 'z' || coord_char == 'w') ? coord_char : 'w');
+    std::string filename = (target_dir / ("five_cell_projected_drop_" + axis_name + ".ovm")).string();
     
     OpenVolumeMesh::IO::FileManager fileManager;
 
