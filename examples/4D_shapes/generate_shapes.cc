@@ -4,6 +4,10 @@
 #include <set>
 #include <algorithm>
 
+// for exporting properly into new folder
+#include <filesystem>
+namespace fs = std::filesystem;
+
 
 #include <OpenVolumeMesh/Geometry/VectorT.hh>
 #include <OpenVolumeMesh/Mesh/PolyhedralMesh.hh>
@@ -14,7 +18,6 @@ using Mesh4D = OpenVolumeMesh::GeometricPolyhedralMeshV4d;
 using Vec4d  = OpenVolumeMesh::Geometry::Vec4d;
 using Vec3d  = OpenVolumeMesh::Geometry::Vec3d;
 
-//comment for test push
 
 // helper function for orienting faces in convex cell of any shape
 std::vector<OpenVolumeMesh::HalfFaceHandle> orient_faces_for_convex_cell(const Mesh4D& mesh, const std::vector<OpenVolumeMesh::FaceHandle>& faces) {
@@ -199,12 +202,31 @@ int main() {
     OpenVolumeMesh::GeometricPolyhedralMeshV3d mesh_3d;
     convert_to_3d_shadow(mesh_4d, mesh_3d);
 
-    // export
+    // export into new folder
+    std::string relative_path = "../../../examples/4D_shapes/ovm_files";
+
+    fs::path target_dir;
+
+    try {
+        target_dir = fs::canonical(fs::current_path() / relative_path);
+    } catch (...) {
+        target_dir = fs::current_path() / relative_path;
+    }
+
+
+    if (!fs::exists(target_dir)) {
+        fs::create_directories(target_dir);
+        std::cout << "Created directory: " << target_dir << std::endl;
+    }
+
+    std::string filename = (target_dir / "five_cell_projected.ovm").string(); // NOTE FOR ME: Change this after adding new shapes
+    
     OpenVolumeMesh::IO::FileManager fileManager;
-    std::string filename = "five_cell_projected.ovm";
+
+    std::cout << "Attempting to save to: " << filename << std::endl;
 
     if(fileManager.writeFile(filename, mesh_3d)) {
-        std::cout << "Success: Saved 3D projection to " << filename << std::endl;
+        std::cout << "Success: Saved 3D projection!" << std::endl;
     } else {
         std::cerr << "Error: Failed to save file." << std::endl;
         return 1;
