@@ -26,6 +26,8 @@ set_target_properties (read_vtk PROPERTIES
     CXX_EXTENSIONS NO
 )
 
+add_subdirectory(4D_shapes) #needed after adding 4D shapes folder into example folder
+
 #[[=
 if(WIN32)
   # copy exe file to "Build" directory
