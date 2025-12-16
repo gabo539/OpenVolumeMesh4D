@@ -104,13 +104,15 @@ std::vector<OpenVolumeMesh::HalfFaceHandle> orient_faces_for_convex_cell(const M
 void create_five_cell_4d(Mesh4D& mesh) {
     std::cout << "Creating 4D 5-Cell..." << std::endl;
 
-    // add vertices
-    double r = 1.0 / std::sqrt(5.0);
-    auto v0 = mesh.add_vertex(Vec4d( 1,  1,  1, -r));
-    auto v1 = mesh.add_vertex(Vec4d( 1, -1, -1, -r));
-    auto v2 = mesh.add_vertex(Vec4d(-1,  1, -1, -r));
-    auto v3 = mesh.add_vertex(Vec4d(-1, -1,  1, -r));
-    auto v4 = mesh.add_vertex(Vec4d( 0,  0,  0,  r)); // "peak" not in a hyperplane with the rest
+    const double scale = std::sqrt(5.0) / 4.0;
+    const double base_w = -1.0 / std::sqrt(5.0);
+    const double peak_w =  4.0 / std::sqrt(5.0);
+
+    auto v0 = mesh.add_vertex((Vec4d( 1,  1,  1, base_w)*scale));
+    auto v1 = mesh.add_vertex((Vec4d( 1, -1, -1, base_w)*scale));
+    auto v2 = mesh.add_vertex((Vec4d(-1,  1, -1, base_w)*scale));
+    auto v3 = mesh.add_vertex((Vec4d(-1, -1,  1, base_w)*scale));
+    auto v4 = mesh.add_vertex((Vec4d( 0,  0,  0, peak_w)*scale)); // "peak" not in a hyperplane with the rest
 
     // making the process defining faces more elegant and readable
     std::vector<OpenVolumeMesh::VertexHandle> fv;
