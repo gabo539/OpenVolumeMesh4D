@@ -199,6 +199,35 @@ void convert_to_3d_shadow(const Mesh4D& mesh_4d, OpenVolumeMesh::GeometricPolyhe
 }
 
 
+bool verify_unit_sphere(const Mesh4D& mesh) {
+    std::cout << "Verifying 4D Unit Sphere Condition..." << std::endl;
+
+    bool all_valid = true;
+    const double epsilon = 1e-5; // machine epsilon for floating point errors
+
+    for(auto v_it = mesh.vertices_begin(); v_it != mesh.vertices_end(); ++v_it) {
+        Vec4d p = mesh.vertex(*v_it);
+
+        // calculate magnitude: sqrt(x*x + y*y + z*z + w*w)
+        double length = std::sqrt(p[0]*p[0] + p[1]*p[1] + p[2]*p[2] + p[3]*p[3]);
+
+        if (std::abs(length - 1.0) > epsilon) {
+            std::cerr << " [FAIL] Vertex " << v_it->idx()
+                      << " is at radius " << length
+                      << " (Coords: " << p[0] << ", " << p[1] << ", " << p[2] << ", " << p[3] << ")"
+                      << std::endl;
+            all_valid = false;
+        }
+    }
+
+    if (all_valid) {
+        std::cout << " [SUCCESS] All vertices are on the 4D unit sphere." << std::endl;
+    }
+
+    return all_valid;
+}
+
+
 int main() {
     //ask user which axis to drop
     char coord_char;
@@ -225,6 +254,9 @@ int main() {
     // create mesh
     Mesh4D mesh_4d;
     create_five_cell_4d(mesh_4d);
+
+    //test distance to ursprung
+    verify_unit_sphere(mesh_4d);
 
     // project to 3d
     OpenVolumeMesh::GeometricPolyhedralMeshV3d mesh_3d;
