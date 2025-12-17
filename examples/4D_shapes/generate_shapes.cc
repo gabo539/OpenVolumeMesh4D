@@ -3,8 +3,9 @@
 #include <cmath>
 #include <set>
 #include <algorithm>
+#include <limits>
 
-// for exporting properly into new folder
+#include "subdivision.hh"
 #include <filesystem>
 namespace fs = std::filesystem;
 
@@ -17,87 +18,6 @@ namespace fs = std::filesystem;
 using Mesh4D = OpenVolumeMesh::GeometricPolyhedralMeshV4d;
 using Vec4d  = OpenVolumeMesh::Geometry::Vec4d;
 using Vec3d  = OpenVolumeMesh::Geometry::Vec3d;
-
-
-// helper function for orienting faces in convex cell of any shape
-std::vector<OpenVolumeMesh::HalfFaceHandle> orient_faces_for_convex_cell(const Mesh4D& mesh, const std::vector<OpenVolumeMesh::FaceHandle>& faces) {
-
-    std::vector<OpenVolumeMesh::HalfFaceHandle> result_halffaces;
-
-    // identify all vertices involved in this cell
-    std::set<OpenVolumeMesh::VertexHandle> cell_vertices;  //using set in order to avoid duplicates
-    //interate through all faces
-    for(const auto& fh : faces) {
-        auto hf = mesh.halfface_handle(fh, 0); // peek at side 0
-
-        // interate through all vertices of the current face using the halfface vertex iterator
-        for(auto hfv_it = mesh.hfv_iter(hf); hfv_it.valid(); ++hfv_it) {
-
-            cell_vertices.insert(*hfv_it); //add vertices derefencing the interator
-        }
-    }
-
-    //return if no vertices found
-    if(cell_vertices.empty()) return {};
-
-    //  calculate cell centroid in 3D-projection
-    // we ignore one variable
-    Vec3d centroid(0, 0, 0);
-    for(const auto& vh : cell_vertices) {
-        Vec4d p4 = mesh.vertex(vh);
-        centroid += Vec3d(p4[0], p4[1], p4[2]);
-    }
-
-    centroid /= double(cell_vertices.size());
-
-    //orient each face towards the centroid
-    for(const auto& fh : faces) {
-        // collect face vertices in 3D
-        std::vector<Vec3d> f_pos;
-        auto hf0 = mesh.halfface_handle(fh, 0); //grab handle of side 0
-
-        for(auto hfv_it = mesh.hfv_iter(hf0); hfv_it.valid(); ++hfv_it) { //iterate through all vertices
-            Vec4d p4 = mesh.vertex(*hfv_it); //look up the coordiate
-            f_pos.push_back(Vec3d(p4[0], p4[1], p4[2])); //add all of them besides w
-        }
-
-        if(f_pos.size() < 3) continue; // skip broken faces
-
-        // calculate normalvector of the face
-        // mormal = (v1-v0) "cross" (v2-v0)
-        Vec3d vecA = f_pos[1] - f_pos[0];
-        Vec3d vecB = f_pos[2] - f_pos[0];
-        Vec3d normal = vecA % vecB; // cross product
-
-        // vector from face (randomly picked vertex zero) to centroid
-        Vec3d vec_to_center = centroid - f_pos[0];
-
-        // dot product check
-        // > 0 -> normal points into the volume -> keep side
-        // < 0 -> normal points out  -> flip
-        // == 0 -> invalid cell with no 0 volume
-        double dot = (normal | vec_to_center);
-
-        // machine epsilon for floating number errors
-        const double epsilon = 1e-9;
-
-        if (std::abs(dot) < epsilon) {
-            std::cerr << "Warning: Face " << fh.idx()
-                      << " is in one plane with cell center! (Corrupted cell)" << std::endl;
-            result_halffaces.push_back(mesh.halfface_handle(fh, 0));
-        }
-
-        else if (dot > 0) {
-            result_halffaces.push_back(mesh.halfface_handle(fh, 0));
-        }
-
-        else {
-            result_halffaces.push_back(mesh.halfface_handle(fh, 1));
-        }
-    }
-
-    return result_halffaces;
-}
 
 
 //generate 5-cell
@@ -229,26 +149,76 @@ bool verify_unit_sphere(const Mesh4D& mesh) {
 
 
 int main() {
-    //ask user which axis to drop
-    char coord_char;
-    int drop_axis = 3; // default to w
 
-    std::cout << "Which coordinate should be dropped? Select x, y, z or w and press ENTER: ";
-    std::cin >> coord_char;
+    char refine_choice;
+    int subdiv_levels = 0;
 
-    // normalize to lower case
-    coord_char = std::tolower(coord_char);
+    // loop until we get "y" or "n"
+    while (true) {
+        std::cout << "Do you want to refine the shape by subdivision? (y/n): ";
+        std::cin >> refine_choice;
 
-    switch(coord_char) {
-    case 'x': drop_axis = 0; break;
-    case 'y': drop_axis = 1; break;
-    case 'z': drop_axis = 2; break;
-    case 'w': drop_axis = 3; break;
-    default:
-        std::cout << "Invalid input '" << coord_char << "', defaulting to 'w'." << std::endl;
-        drop_axis = 3;
-        break;
+        // clear buffer for typos like "yes" instead if "y"
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
+        refine_choice = std::tolower(refine_choice);
+
+        if (refine_choice == 'y' || refine_choice == 'n') {
+            break; // valid input
+        }
+
+        std::cout << "Invalid input '" << refine_choice << "'. Please enter 'y' or 'n'." << std::endl;
     }
+
+    // loop until we get a valid number (if "yes" has been chosen)
+    if (refine_choice == 'y') {
+        while (true) {
+            std::cout << "How many iterations? (1-3 recommended): ";
+            if (std::cin >> subdiv_levels) {
+                if (subdiv_levels >= 1) {
+                    // clear buffer after reading the number to keep stream clean
+                    std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+                    break; // valid number
+                }
+
+                std::cout << "Please enter a number >= 1." << std::endl;
+
+            } else {
+                std::cout << "That is not a number." << std::endl;
+                std::cin.clear();
+                std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            }
+        }
+    }
+
+
+    char coord_char;
+    int drop_axis = 3;
+
+    while (true) {
+        std::cout << "Which coordinate should be dropped? Select x, y, z or w and press ENTER: ";
+        std::cin >> coord_char;
+
+        // Clean buffer immediately (handles typos like "xw")
+        std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+
+        coord_char = std::tolower(coord_char);
+
+        bool valid = true;
+        switch(coord_char) {
+            case 'x': drop_axis = 0; break;
+            case 'y': drop_axis = 1; break;
+            case 'z': drop_axis = 2; break;
+            case 'w': drop_axis = 3; break;
+            default:
+                std::cout << "Invalid input '" << coord_char << "'. Please enter x, y, z, or w." << std::endl;
+                valid = false;
+                break;
+        }
+
+        if (valid) break; // if valid exit loop
+    }
+
 
 
     // create mesh
@@ -257,6 +227,11 @@ int main() {
 
     //test distance to ursprung
     verify_unit_sphere(mesh_4d);
+
+
+    for(int i = 0; i < subdiv_levels; ++i) {
+        subdivide_mesh_once(mesh_4d);
+    }
 
     // project to 3d
     OpenVolumeMesh::GeometricPolyhedralMeshV3d mesh_3d;
