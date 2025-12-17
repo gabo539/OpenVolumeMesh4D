@@ -233,6 +233,14 @@ int main() {
         subdivide_mesh_once(mesh_4d);
     }
 
+    //check if ALL vertices are on unit sphere
+    std::cout << "Verifying mesh after " << subdiv_levels << " subdivisions:" << std::endl;
+    bool is_perfect = verify_unit_sphere(mesh_4d);
+
+    if(!is_perfect) {
+        std::cerr << "WARNING: Subdivision drifted off the sphere!" << std::endl;
+    }
+
     // project to 3d
     OpenVolumeMesh::GeometricPolyhedralMeshV3d mesh_3d;
     convert_to_3d_shadow(mesh_4d, mesh_3d, drop_axis);
