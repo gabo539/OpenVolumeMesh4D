@@ -14,6 +14,7 @@
 #include <cassert>
 
 #include <Eigen/Dense>
+#include <map>
 
 #include <OpenVolumeMesh/Geometry/VectorT.hh>
 #include <OpenVolumeMesh/Mesh/PolyhedralMesh.hh>
@@ -40,7 +41,7 @@ inline Eigen::Vector4d cross_product_4d(const Eigen::Vector4d& a, const Eigen::V
     return Eigen::Vector4d(x, y, z, w);
 }
 
-
+// TODO DISCUSS THIS NEW APPROACH
 inline std::vector<OpenVolumeMesh::HalfFaceHandle> orient_faces_for_convex_cell(const Mesh4D& mesh, const std::vector<OpenVolumeMesh::FaceHandle>& faces) {
 
     std::vector<OpenVolumeMesh::HalfFaceHandle> result_halffaces;
