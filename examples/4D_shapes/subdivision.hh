@@ -13,6 +13,8 @@
 #include <map>
 #include <cassert>
 
+#include <Eigen/Dense>
+
 #include <OpenVolumeMesh/Geometry/VectorT.hh>
 #include <OpenVolumeMesh/Mesh/PolyhedralMesh.hh>
 
@@ -21,12 +23,29 @@ using Mesh4D = OpenVolumeMesh::GeometricPolyhedralMeshV4d;
 using Vec4d  = OpenVolumeMesh::Geometry::Vec4d;
 using Vec3d  = OpenVolumeMesh::Geometry::Vec3d;
 
-// orient faces correctly
+// helper datatype
+inline Eigen::Vector4d to_eigen(const Vec4d& v) {
+    return Eigen::Vector4d(v[0], v[1], v[2], v[3]);
+}
+
+// helper: generalized wedge product in 4D (computes vector orthogonal to a, b, c)
+inline Eigen::Vector4d cross_product_4d(const Eigen::Vector4d& a, const Eigen::Vector4d& b, const Eigen::Vector4d& c) {
+
+    // Manual determinant expansion for 4D cross product:
+    double x = -a[1] * (b[2]*c[3] - b[3]*c[2]) + a[2] * (b[1]*c[3] - b[3]*c[1]) - a[3] * (b[1]*c[2] - b[2]*c[1]);
+    double y =  a[0] * (b[2]*c[3] - b[3]*c[2]) - a[2] * (b[0]*c[3] - b[3]*c[0]) + a[3] * (b[0]*c[2] - b[2]*c[0]);
+    double z = -a[0] * (b[1]*c[3] - b[3]*c[1]) + a[1] * (b[0]*c[3] - b[3]*c[0]) - a[3] * (b[0]*c[1] - b[1]*c[0]);
+    double w =  a[0] * (b[1]*c[2] - b[2]*c[1]) - a[1] * (b[0]*c[2] - b[2]*c[0]) + a[2] * (b[0]*c[1] - b[1]*c[0]);
+
+    return Eigen::Vector4d(x, y, z, w);
+}
+
+
 inline std::vector<OpenVolumeMesh::HalfFaceHandle> orient_faces_for_convex_cell(const Mesh4D& mesh, const std::vector<OpenVolumeMesh::FaceHandle>& faces) {
 
     std::vector<OpenVolumeMesh::HalfFaceHandle> result_halffaces;
 
-    // identify all vertices involved in this cell
+    // identify all vertices involved in this cell to calculate the "Cell Normal"
     std::set<OpenVolumeMesh::VertexHandle> cell_vertices;
     for(const auto& fh : faces) {
         auto hf = mesh.halfface_handle(fh, 0);
@@ -35,64 +54,79 @@ inline std::vector<OpenVolumeMesh::HalfFaceHandle> orient_faces_for_convex_cell(
         }
     }
 
-    if(cell_vertices.empty()) return {};
-
-    // TODO: CHANGE THAT I HAVE HARDCODED THIS EVEN THO I SHOULDNT HAVE HAD OR JUST STOP THE XYZ DROPS
-
-    // MY ORIENTATION IS WRONG, BUT TOPOLOGY RIGHT BECAUSE OF HARDCODING
-
-    // calculate cell centroid in 3D-projection
-    Vec3d centroid(0, 0, 0);
-    for(const auto& vh : cell_vertices) {
-        Vec4d p4 = mesh.vertex(vh);
-        centroid += Vec3d(p4[0], p4[1], p4[2]);
+    // check wether all cells have correct amount of vertices
+    if(cell_vertices.size() < 4) {
+        std::cerr << "Error: Cell has fewer than 4 vertices!" << std::endl;
+        return {};
     }
 
-    centroid /= double(cell_vertices.size()); //arithmetic mean of vertices (centre of tetrahedron)
+    // convert set to vector for easy indexing
+    std::vector<OpenVolumeMesh::VertexHandle> verts(cell_vertices.begin(), cell_vertices.end());
 
-    // orient each face towards the centroid
-    // identify all vertices involved in this cell
-    //interate through all faces
+    // calculate the "cell normal"
+    // pick 3 arbitrary edges coming from the first vertex to define the cell's 3D volume
+    Eigen::Vector4d v0 = to_eigen(mesh.vertex(verts[0]));
+    Eigen::Vector4d v1 = to_eigen(mesh.vertex(verts[1]));
+    Eigen::Vector4d v2 = to_eigen(mesh.vertex(verts[2]));
+    Eigen::Vector4d v3 = to_eigen(mesh.vertex(verts[3]));
+
+    Eigen::Vector4d cell_edge1 = v1 - v0;
+    Eigen::Vector4d cell_edge2 = v2 - v0;
+    Eigen::Vector4d cell_edge3 = v3 - v0;
+
+    // this vector is orthogonal to the cells 3D volume
+    Eigen::Vector4d cell_normal = cross_product_4d(cell_edge1, cell_edge2, cell_edge3);
+
+    // calculate Centroid reference point inside the cell
+    Eigen::Vector4d centroid = Eigen::Vector4d::Zero();
+    for(auto vh : verts) centroid += to_eigen(mesh.vertex(vh));
+    centroid /= double(verts.size());
+
+    // orient each face using the 4D Determinant
     for(const auto& fh : faces) {
-        std::vector<Vec3d> f_pos;
-        auto hf0 = mesh.halfface_handle(fh, 0); // peek at side 0
+        std::vector<Eigen::Vector4d> f_pos;
+        auto hf0 = mesh.halfface_handle(fh, 0); // check orientation of side 0
 
-        // interate through all vertices of the current face using the halfface vertex iterator
         for(auto hfv_it = mesh.hfv_iter(hf0); hfv_it.valid(); ++hfv_it) {
-            Vec4d p4 = mesh.vertex(*hfv_it);
-            f_pos.push_back(Vec3d(p4[0], p4[1], p4[2]));
+            f_pos.push_back(to_eigen(mesh.vertex(*hfv_it)));
         }
 
-        if(f_pos.size() < 3) continue;
+        // a face is defined by 3 points / 2 edges
+        // we form a 4x4 matrix with: [face_edge_a, face_edge_b, vec_to_center, cell_normal]
+        Eigen::Vector4d face_edge_a = f_pos[1] - f_pos[0];
+        Eigen::Vector4d face_edge_b = f_pos[2] - f_pos[0];
+        Eigen::Vector4d vec_to_center = centroid - f_pos[0];
 
-        //we take one of the triangles as a base
-        Vec3d vecA = f_pos[1] - f_pos[0];
-        Vec3d vecB = f_pos[2] - f_pos[0];
-        Vec3d normal = vecA % vecB; // cross product
+        Eigen::Matrix4d mat;
+        mat.col(0) = face_edge_a;
+        mat.col(1) = face_edge_b;
+        mat.col(2) = vec_to_center;
+        mat.col(3) = cell_normal;
 
-        //vector from surface to centroid
-        Vec3d vec_to_center = centroid - f_pos[0];
+        double det = mat.determinant();
 
-        // dot product check
-        // > 0 -> normal points into the volume -> keep side
-        // < 0 -> normal points out  -> flip
-        // == 0 -> invalid cell with no 0 volume
-        double dot = (normal | vec_to_center);
+        // check determinant sign
+        // det > 0 means vectors are in "positive" order relative to each other
+        // if your cells come out inside-out, just swap the < 0 to > 0 here
+        double epsilon = 1e-10; // small tolerance
 
-        // machine epsilon for floating number errors
-        const double epsilon = 1e-9;
-        if (std::abs(dot) < epsilon) {
-            std::cerr << "Warning: Face " << fh.idx()
-                      << " is in one plane with cell center! (Corrupted cell)" << std::endl;
+        if (det < -epsilon) {
+            // definitely Negative -> keep side 0
             result_halffaces.push_back(mesh.halfface_handle(fh, 0));
-        } else if (dot > 0) {
-            result_halffaces.push_back(mesh.halfface_handle(fh, 0));
-        } else {
+        }
+        else if (det > epsilon) {
+            // definitely Positive -> swap to side 1
             result_halffaces.push_back(mesh.halfface_handle(fh, 1));
+        }
+        else {
+            // det is effectively 0 (degenerate)
+            std::cerr << "Warning: Degenerate face detected at " << fh.idx() << std::endl;
+            result_halffaces.push_back(mesh.halfface_handle(fh, 0)); // Default to 0
         }
     }
     return result_halffaces;
 }
+
 
 // helper to prevent that we create the same face multiple times
 inline OpenVolumeMesh::FaceHandle get_or_create_face(Mesh4D& mesh, OpenVolumeMesh::VertexHandle v1, OpenVolumeMesh::VertexHandle v2, OpenVolumeMesh::VertexHandle v3, std::map<std::vector<int>, OpenVolumeMesh::FaceHandle>& face_map) {
