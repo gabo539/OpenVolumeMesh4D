@@ -6,6 +6,7 @@ find_package(Eigen3 REQUIRED NO_MODULE)
 add_executable(generate_shapes generate_shapes.cc
         subdivision.hh)
 
+
 target_link_libraries(generate_shapes
         PUBLIC
         OpenVolumeMesh
