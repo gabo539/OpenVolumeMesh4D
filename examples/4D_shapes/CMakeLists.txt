@@ -4,7 +4,8 @@ cmake_policy(VERSION 3.12.0)
 find_package(Eigen3 REQUIRED NO_MODULE)
 
 add_executable(generate_shapes generate_shapes.cc
-        subdivision.hh)
+        subdivision.hh
+        QualityAnalyzer.hh)
 
 
 target_link_libraries(generate_shapes
